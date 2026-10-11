@@ -1,0 +1,704 @@
+local player = game.Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local runService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local espActive = false
+local aimbotActive = false
+local autoShoot = false
+local speedActive = false
+local espList = {}
+local currentTarget = nil
+local speed = 16
+
+local frameCounter = 0
+local UPDATE_ESP_INTERVAL = 10
+local GET_TARGET_INTERVAL = 3
+local MAX_ESP_DISTANCE = 1000
+
+local accentColor = Color3.fromRGB(0, 150, 255)
+local UI_SCALE = 0.8
+local isMinimized = false
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "iz911_hub"
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.ResetOnSpawn = false
+
+local ShadowFrame = Instance.new("Frame")
+ShadowFrame.Name = "ShadowFrame"
+ShadowFrame.Parent = ScreenGui
+ShadowFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ShadowFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+ShadowFrame.Position = UDim2.new(0.5, 4, 0.5, 6)
+ShadowFrame.Size = UDim2.new(0, 646, 0, 426)
+ShadowFrame.BackgroundTransparency = 0.45
+ShadowFrame.Visible = true
+Instance.new("UICorner", ShadowFrame).CornerRadius = UDim.new(0, 16)
+local ShadowScale = Instance.new("UIScale", ShadowFrame)
+ShadowScale.Scale = UI_SCALE
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(11, 11, 16)
+MainFrame.BackgroundTransparency = 0.1
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.new(0, 640, 0, 420)
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = false
+MainFrame.Visible = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 14)
+
+local BgImage = Instance.new("ImageLabel")
+BgImage.Parent = MainFrame
+BgImage.BackgroundTransparency = 1
+BgImage.Size = UDim2.new(1, 0, 1, 0)
+BgImage.Image = "rbxassetid://77759318027883"
+BgImage.ScaleType = Enum.ScaleType.Crop
+BgImage.ImageTransparency = 0.35
+Instance.new("UICorner", BgImage).CornerRadius = UDim.new(0, 14)
+
+local MainScale = Instance.new("UIScale", MainFrame)
+MainScale.Scale = UI_SCALE
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Parent = MainFrame
+MainStroke.Color = Color3.fromRGB(35, 35, 50)
+MainStroke.Thickness = 1.5
+
+local ToggleWidget = Instance.new("TextButton")
+ToggleWidget.Parent = ScreenGui
+ToggleWidget.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ToggleWidget.BackgroundTransparency = 0.1
+ToggleWidget.Position = UDim2.new(0.5, -60, 0.05, 0)
+ToggleWidget.Size = UDim2.new(0, 120, 0, 35)
+ToggleWidget.Visible = false
+ToggleWidget.Text = "iz911_hub"
+ToggleWidget.TextColor3 = Color3.fromRGB(0, 150, 255)
+ToggleWidget.TextSize = 14
+ToggleWidget.Font = Enum.Font.GothamBold
+ToggleWidget.ZIndex = 100
+Instance.new("UICorner", ToggleWidget).CornerRadius = UDim.new(0, 8)
+local ToggleScale = Instance.new("UIScale", ToggleWidget)
+ToggleScale.Scale = 0.9
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Parent = ToggleWidget
+ToggleStroke.Color = Color3.fromRGB(50, 50, 50)
+ToggleStroke.Thickness = 1
+local dragToggle, dragInputT, dragStartT, startPosT, dragStartTime = false
+ToggleWidget.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragToggle = true
+        dragStartT = input.Position
+        startPosT = ToggleWidget.Position
+        dragStartTime = tick()
+    end
+end)
+
+ToggleWidget.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInputT = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputT and dragToggle then
+        local delta = input.Position - dragStartT
+        ToggleWidget.Position = UDim2.new(
+            startPosT.X.Scale, startPosT.X.Offset + delta.X,
+            startPosT.Y.Scale, startPosT.Y.Offset + delta.Y
+        )
+    end
+end)
+
+ToggleWidget.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragToggle = false
+        if tick() - dragStartTime < 0.25 then
+            isMinimized = false
+            MainFrame.Visible = true
+            ShadowFrame.Visible = true
+            MainFrame.Size = UDim2.new(0, 640, 0, 420)
+            ShadowFrame.Size = UDim2.new(0, 646, 0, 426)
+            MinBtn.Text = "-"
+            ToggleWidget.Visible = false
+        end
+    end
+end)
+
+local dragging, dragInput, dragStart, startPos = false
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        local targetPos = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+        MainFrame.Position = targetPos
+        ShadowFrame.Position = UDim2.new(
+            targetPos.X.Scale, targetPos.X.Offset + 4,
+            targetPos.Y.Scale, targetPos.Y.Offset + 6
+        )
+    end
+end)
+
+MainFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+local TopControls = Instance.new("Frame")
+TopControls.Parent = MainFrame
+TopControls.BackgroundTransparency = 1
+TopControls.Position = UDim2.new(1, -75, 0, 14)
+TopControls.Size = UDim2.new(0, 65, 0, 26)
+TopControls.ZIndex = 20
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TopControls
+CloseBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
+CloseBtn.Position = UDim2.new(1, -26, 0, 0)
+CloseBtn.Size = UDim2.new(0, 26, 0, 26)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(250, 80, 80)
+CloseBtn.TextSize = 18
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Parent = TopControls
+MinBtn.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
+MinBtn.Position = UDim2.new(1, -58, 0, 0)
+MinBtn.Size = UDim2.new(0, 26, 0, 26)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(160, 160, 180)
+MinBtn.TextSize = 18
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
+MinBtn.MouseButton1Click:Connect(function()
+    if isMinimized then
+        isMinimized = false
+        ToggleWidget.Visible = false
+        MainFrame.Visible = true
+        ShadowFrame.Visible = true
+        MainFrame.Size = UDim2.new(0, 640, 0, 420)
+        ShadowFrame.Size = UDim2.new(0, 646, 0, 426)
+        MinBtn.Text = "-"
+    else
+        isMinimized = true
+        ToggleWidget.Visible = true
+        MainFrame.Visible = false
+        ShadowFrame.Visible = false
+        MinBtn.Text = "+"
+    end
+end)
+
+local Sidebar = Instance.new("Frame")
+Sidebar.Parent = MainFrame
+Sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+Sidebar.BackgroundTransparency = 0.1
+Sidebar.Size = UDim2.new(0, 170, 1, 0)
+Sidebar.BorderSizePixel = 0
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 14)
+
+local Title = Instance.new("TextLabel")
+Title.Parent = Sidebar
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 0, 0, 16)
+Title.Size = UDim2.new(1, 0, 0, 26)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "iz911_hub"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 20
+
+local TitleGradient = Instance.new("UIGradient")
+TitleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, accentColor),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
+})
+TitleGradient.Parent = Title
+
+local SepLine = Instance.new("Frame")
+SepLine.Parent = Sidebar
+SepLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SepLine.Position = UDim2.new(0.1, 0, 0, 52)
+SepLine.Size = UDim2.new(0.8, 0, 0, 1)
+
+local TabContainer = Instance.new("Frame")
+TabContainer.Parent = Sidebar
+TabContainer.BackgroundTransparency = 1
+TabContainer.Position = UDim2.new(0, 12, 0, 72)
+TabContainer.Size = UDim2.new(1, -24, 1, -85)
+
+local TabListLayout = Instance.new("UIListLayout")
+TabListLayout.Parent = TabContainer
+TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabListLayout.Padding = UDim.new(0, 10)
+
+local ContentArea = Instance.new("Frame")
+ContentArea.Parent = MainFrame
+ContentArea.BackgroundTransparency = 1
+ContentArea.ClipsDescendants = false
+ContentArea.Position = UDim2.new(0, 185, 0, 15)
+ContentArea.Size = UDim2.new(1, -200, 1, -30)
+
+local pages = {}
+local chPage = Instance.new("Frame")
+chPage.Parent = ContentArea
+chPage.BackgroundTransparency = 1
+chPage.Size = UDim2.new(1, 0, 1, 0)
+chPage.Visible = true
+pages["Cheating"] = chPage
+local yOffset = 10
+local function createToggle(text, defaultValue, callback)
+    local frame = Instance.new("Frame")
+    frame.Parent = chPage
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.3
+    frame.Size = UDim2.new(1, -20, 0, 40)
+    frame.Position = UDim2.new(0, 10, 0, yOffset)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    
+    local label = Instance.new("TextLabel")
+    label.Parent = frame
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Font = Enum.Font.GothamSemibold
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(200, 200, 220)
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local btn = Instance.new("TextButton")
+    btn.Parent = frame
+    btn.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(50, 50, 50)
+    btn.Position = UDim2.new(0.85, -25, 0.5, -12)
+    btn.Size = UDim2.new(0, 50, 0, 24)
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = defaultValue and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    btn.MouseButton1Click:Connect(function()
+        local newState = not (btn.Text == "ON")
+        btn.Text = newState and "ON" or "OFF"
+        btn.BackgroundColor3 = newState and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(50, 50, 50)
+        callback(newState)
+    end)
+    
+    yOffset = yOffset + 45
+    return btn
+end
+
+local spPage = Instance.new("Frame")
+spPage.Parent = ContentArea
+spPage.BackgroundTransparency = 1
+spPage.Size = UDim2.new(1, 0, 1, 0)
+spPage.Visible = false
+pages["Speed"] = spPage
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Parent = spPage
+speedLabel.BackgroundTransparency = 1
+speedLabel.Position = UDim2.new(0, 10, 0, 15)
+speedLabel.Size = UDim2.new(1, -20, 0, 30)
+speedLabel.Font = Enum.Font.GothamBold
+speedLabel.Text = "Speed"
+speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedLabel.TextSize = 18
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local speedSliderFrame = Instance.new("Frame")
+speedSliderFrame.Parent = spPage
+speedSliderFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+speedSliderFrame.BackgroundTransparency = 0.3
+speedSliderFrame.Position = UDim2.new(0, 10, 0, 60)
+speedSliderFrame.Size = UDim2.new(1, -20, 0, 70)
+Instance.new("UICorner", speedSliderFrame).CornerRadius = UDim.new(0, 8)
+
+local speedLabel2 = Instance.new("TextLabel")
+speedLabel2.Parent = speedSliderFrame
+speedLabel2.BackgroundTransparency = 1
+speedLabel2.Position = UDim2.new(0, 15, 0, 0)
+speedLabel2.Size = UDim2.new(1, -30, 0, 30)
+speedLabel2.Font = Enum.Font.GothamBold
+speedLabel2.Text = "Speed: " .. speed
+speedLabel2.TextColor3 = Color3.fromRGB(200, 200, 220)
+speedLabel2.TextSize = 16
+speedLabel2.TextXAlignment = Enum.TextXAlignment.Left
+
+local slider = Instance.new("Frame")
+slider.Parent = speedSliderFrame
+slider.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+slider.Position = UDim2.new(0, 15, 0, 40)
+slider.Size = UDim2.new(1, -30, 0, 6)
+Instance.new("UICorner", slider).CornerRadius = UDim.new(0, 3)
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Parent = slider
+sliderFill.BackgroundColor3 = accentColor
+sliderFill.Size = UDim2.new((speed - 10) / 200, 0, 1, 0)
+Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(0, 3)
+
+local dragSlider = false
+local sliderBtn = Instance.new("TextButton")
+sliderBtn.Parent = slider
+sliderBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+sliderBtn.Position = UDim2.new((speed - 10) / 200, -8, 0.5, -8)
+sliderBtn.Size = UDim2.new(0, 16, 0, 16)
+Instance.new("UICorner", sliderBtn).CornerRadius = UDim.new(1, 0)
+
+sliderBtn.MouseButton1Down:Connect(function() dragSlider = true end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragSlider = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local pos = input.Position.X - slider.AbsolutePosition.X
+        local newVal = math.clamp(pos / slider.AbsoluteSize.X, 0, 1)
+        sliderFill.Size = UDim2.new(newVal, 0, 1, 0)
+        sliderBtn.Position = UDim2.new(newVal, -8, 0.5, -8)
+        speed = math.floor(10 + newVal * 190)
+        speedLabel2.Text = "Speed: " .. speed
+    end
+end)
+
+local crPage = Instance.new("Frame")
+crPage.Parent = ContentArea
+crPage.BackgroundTransparency = 1
+crPage.Size = UDim2.new(1, 0, 1, 0)
+crPage.Visible = false
+pages["Credits"] = crPage
+
+local CreditsLabel = Instance.new("TextLabel")
+CreditsLabel.Parent = crPage
+CreditsLabel.BackgroundTransparency = 1
+CreditsLabel.Size = UDim2.new(1, 0, 1, 0)
+CreditsLabel.Font = Enum.Font.GothamBold
+CreditsLabel.Text = "SCRIPT OWNER\n\niz911_hub\n\nAll Rights Reserved\n2026"
+CreditsLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+CreditsLabel.TextSize = 24
+CreditsLabel.TextWrapped = true
+CreditsLabel.TextYAlignment = Enum.TextYAlignment.Center
+local tabButtons = {}
+local function createTabButton(text, pageName)
+    local btn = Instance.new("TextButton")
+    btn.Parent = TabContainer
+    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+    btn.BackgroundTransparency = 0.15
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(150, 150, 170)
+    btn.TextSize = 14
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+    
+    btn.MouseButton1Click:Connect(function()
+        for _, b in ipairs(tabButtons) do
+            TweenService:Create(b, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(20, 20, 28),
+                TextColor3 = Color3.fromRGB(150, 150, 170)
+            }):Play()
+        end
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(0, 150, 255),
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+        for name, page in pairs(pages) do
+            page.Visible = (name == pageName)
+        end
+    end)
+    
+    table.insert(tabButtons, btn)
+    return btn
+end
+
+local function isEnemy(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local myTeam = player.Team
+    local targetTeam = targetPlayer.Team
+    if myTeam and targetTeam then
+        return myTeam ~= targetTeam
+    end
+    return true
+end
+
+local function removeESP(p)
+    if espList[p] then
+        if espList[p].highlight then espList[p].highlight:Destroy() end
+        if espList[p].name then espList[p].name:Destroy() end
+        espList[p] = nil
+    end
+end
+
+local function addESP(p)
+    if espList[p] or p == player then return end
+    if not isEnemy(p) then return end
+    
+    local c = p.Character
+    if not c then return end
+    local h = c:FindFirstChild("Head")
+    if not h then return end
+    
+    local hl = Instance.new("Highlight")
+    hl.FillColor = Color3.fromRGB(255, 0, 0)
+    hl.OutlineColor = Color3.fromRGB(255, 0, 0)
+    hl.FillTransparency = 0.3
+    hl.OutlineTransparency = 0.1
+    hl.Enabled = espActive
+    hl.Parent = c
+    
+    local bg = Instance.new("BillboardGui")
+    bg.Size = UDim2.new(0, 200, 0, 25)
+    bg.Adornee = h
+    bg.Enabled = espActive
+    bg.Parent = c
+    
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1, 0, 1, 0)
+    txt.Text = p.Name
+    txt.TextColor3 = Color3.fromRGB(255, 0, 0)
+    txt.TextSize = 14
+    txt.Font = Enum.Font.GothamBold
+    txt.BackgroundTransparency = 1
+    txt.Parent = bg
+    
+    espList[p] = {highlight = hl, name = bg}
+end
+
+local function updateESP()
+    for _, esp in pairs(espList) do
+        local c = esp.highlight.Parent
+        if c and c:FindFirstChild("Humanoid") and c.Humanoid.Health > 0 then
+            if esp.highlight.Enabled ~= espActive then
+                esp.highlight.Enabled = espActive
+            end
+            if esp.name.Enabled ~= espActive then
+                esp.name.Enabled = espActive
+            end
+        else
+            if esp.highlight.Enabled then esp.highlight.Enabled = false end
+            if esp.name.Enabled then esp.name.Enabled = false end
+        end
+    end
+end
+
+local function getTarget()
+    local best = nil
+    local bestDist = math.huge
+    local myChar = player.Character
+    if not myChar then return nil end
+    local myPos = myChar:FindFirstChild("HumanoidRootPart")
+    if not myPos then return nil end
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and isEnemy(p) then
+            local humanoid = p.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                local head = p.Character:FindFirstChild("Head")
+                if head then
+                    local dist = (myPos.Position - head.Position).magnitude
+                    if dist < MAX_ESP_DISTANCE and dist < bestDist then
+                        best = p
+                        bestDist = dist
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function isAlive(target)
+    if not target then return false end
+    local c = target.Character
+    if not c then return false end
+    local h = c:FindFirstChild("Humanoid")
+    if not h then return false end
+    return h.Health > 0
+end
+
+local function shootOnce()
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.delay(0.05, function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+end
+
+local lastShootTime = 0
+local SHOOT_COOLDOWN = 0.15
+local function mainLoop()
+    frameCounter = frameCounter + 1
+    
+    if espActive and frameCounter % 30 == 0 then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if not espList[p] and p ~= player and p.Character then
+                addESP(p)
+            end
+        end
+        for p, _ in pairs(espList) do
+            if not p.Parent or not isEnemy(p) then
+                removeESP(p)
+            end
+        end
+    end
+    
+    if frameCounter % UPDATE_ESP_INTERVAL == 0 then
+        updateESP()
+    end
+    
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid and speedActive then
+            humanoid.WalkSpeed = speed
+        end
+    end
+    
+    if aimbotActive then
+        if frameCounter % GET_TARGET_INTERVAL == 0 then
+            local newTarget = getTarget()
+            if newTarget then
+                currentTarget = newTarget
+            end
+        end
+        
+        if currentTarget and isAlive(currentTarget) and isEnemy(currentTarget) then
+            local charTarget = currentTarget.Character
+            if charTarget then
+                local head = charTarget:FindFirstChild("Head")
+                local torso = charTarget:FindFirstChild("HumanoidRootPart")
+                local myChar = player.Character
+                if myChar then
+                    local myPos = myChar:FindFirstChild("HumanoidRootPart")
+                    local targetPart = nil
+                    if head and torso and myPos then
+                        local dist = (myPos.Position - head.Position).magnitude
+                        if dist <= 60 then
+                            targetPart = head
+                        elseif dist > 60 and dist <= 250 then
+                            targetPart = torso
+                        end
+                    end
+                    if targetPart then
+                        camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+                        
+                        if autoShoot then
+                            local now = tick()
+                            if now - lastShootTime >= SHOOT_COOLDOWN then
+                                lastShootTime = now
+                                shootOnce()
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            currentTarget = nil
+        end
+    end
+end
+
+local function onCharacterAdded(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        if p ~= player and p.Character and espActive then
+            addESP(p)
+        end
+    end)
+    if p ~= player and espActive then
+        addESP(p)
+    end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= player then
+        onCharacterAdded(p)
+    end
+end
+
+Players.PlayerAdded:Connect(onCharacterAdded)
+Players.PlayerRemoving:Connect(removeESP)
+
+player:GetPropertyChangedSignal("Team"):Connect(function()
+    for p, _ in pairs(espList) do
+        removeESP(p)
+    end
+    if espActive then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                addESP(p)
+            end
+        end
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    task.wait(2)
+    for p, _ in pairs(espList) do
+        removeESP(p)
+    end
+    if espActive then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                addESP(p)
+            end
+        end
+    end
+end)
+
+runService.Heartbeat:Connect(mainLoop)
+
+createTabButton("Cheating", "Cheating")
+createTabButton("Speed", "Speed")
+createTabButton("Credits", "Credits")
+
+tabButtons[1].BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+tabButtons[1].TextColor3 = Color3.fromRGB(255, 255, 255)
+
+createToggle("ESP", false, function(state)
+    espActive = state
+    if state then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                addESP(p)
+            end
+        end
+        updateESP()
+    else
+        updateESP()
+    end
+end)
+createToggle("Aimbot", false, function(state) aimbotActive = state end)
+createToggle("Auto Shoot", false, function(state) autoShoot = state end)
+createToggle("Speed", false, function(state) speedActive = state end)
